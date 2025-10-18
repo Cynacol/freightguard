@@ -30,6 +30,7 @@ function App() {
     attachments: [],
     runsheet: ''
   });
+
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
@@ -62,7 +63,7 @@ function App() {
       '8': { src: 'corrosive.png', tooltip: 'Corrosive: Damages skin or materials' },
       '9': { src: 'misc_hazard.png', tooltip: 'Miscellaneous: Various hazards' }
     };
-    return [pictogramMap[hazard_class]?.src || 'unknown.png'];
+    return [pictogramMap[hazard_class] || { src: 'unknown.png', tooltip: 'Hazard' }];
   };
 
   const handleFile = async (e) => {
@@ -75,8 +76,8 @@ function App() {
         const rows = text.split('\n').slice(1).map(row => {
           const [un_numbers, residues, residues_class, mass, volume, hclass, ptype, cleaned, state, licensed, nhvr, pallet, blast, valve, shield, bio, corr, lith] = row.split(',');
           return {
-            un_numbers: un_numbers.split(';'),
-            residues: residues.split(';'),
+            un_numbers: un_numbers.split(';').map(u => u.trim()),
+            residues: residues.split(';').map(r => r.trim()).filter(Boolean),
             residues_class,
             total_mass_kg: Number(mass),
             total_volume_m3: Number(volume),
@@ -132,13 +133,14 @@ function App() {
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
+
     const payload = {
       module: form.module,
       state: form.state,
       state_override: form.state_override,
       chemical_name: form.chemical_name,
-      un_numbers: form.un_numbers.split(',').map(s => s.trim()).filter(Boolean),
-      residues: form.residues.split(',').map(s => s.trim()).filter(Boolean),
+      un_numbers: form.un_numbers.split(/[,;]/).map(u => u.trim()),
+      residues: form.residues.split(/[,;]/).map(r => r.trim()).filter(Boolean),
       residues_class: form.residues_class,
       subsidiary_hazard: form.subsidiary_hazard,
       total_mass_kg: Number(form.total_mass_kg) || 0,
@@ -158,11 +160,12 @@ function App() {
       plan: form.plan,
       attachments: form.attachments
     };
+
+    const headers = { 'x-api-key': form.api_key };
+
     try {
       const endpoint = form.module === 'runsheet' ? '/check-runsheet' : '/check';
-      const r = await axios.post(`${API}${endpoint}`, form.module === 'runsheet' ? { runsheet: JSON.parse(form.runsheet), state_override: form.state_override } : payload, {
-        headers: { 'X-API-Key': form.api_key }
-      });
+      const r = await axios.post(`${API}${endpoint}`, form.module === 'runsheet' ? { runsheet: form.runsheet ? JSON.parse(form.runsheet) : [], state_override: form.state_override } : payload, { headers });
       setResult(r.data);
     } catch (err) {
       setResult({ ok: false, error: err.message });
@@ -175,6 +178,7 @@ function App() {
     <div style={{ padding: 20, fontFamily: 'sans-serif', maxWidth: '600px', margin: '0 auto' }}>
       <h1 style={{ fontSize: '1.5em' }}>FreightGuard Prototype</h1>
       <form onSubmit={submit}>
+        {/* Module, State, Override, Plan, API Key */}
         <div style={{ marginBottom: 10 }}>
           <label>Module: 
             <select value={form.module} onChange={e => onChange('module', e.target.value)}>
@@ -188,7 +192,7 @@ function App() {
           </select></label>
         </div>
         <div style={{ marginBottom: 10 }}>
-          <label>Test State Override: <select value={form.state_override} onChange={e => onChange('state_override', e.target.value)}>
+          <label>State Override: <select value={form.state_override} onChange={e => onChange('state_override', e.target.value)}>
             <option value="">None</option>
             {['SA', 'NSW', 'VIC', 'QLD', 'WA', 'TAS', 'NT', 'ACT'].map(s => <option key={s}>{s}</option>)}
           </select></label>
@@ -201,30 +205,22 @@ function App() {
         <div style={{ marginBottom: 10 }}>
           <label>API Key: <input style={{ width: '100%' }} value={form.api_key} onChange={e => onChange('api_key', e.target.value)} /></label>
         </div>
+
         {form.module !== 'runsheet' ? (
           <>
+            {/* Chemical Info */}
             <div style={{ marginBottom: 10, position: 'relative' }}>
               <label>Chemical Name: 
-                <input 
-                  style={{ width: '100%' }} 
-                  value={form.chemical_name} 
-                  onChange={e => onChange('chemical_name', e.target.value)} 
-                  placeholder="e.g., potassium nitrate"
-                />
+                <input style={{ width: '100%' }} value={form.chemical_name} onChange={e => onChange('chemical_name', e.target.value)} placeholder="e.g., potassium nitrate" />
               </label>
               {suggestions.length > 0 && (
                 <ul style={{ position: 'absolute', background: '#fff', border: '1px solid #ccc', width: '100%', zIndex: 1 }}>
-                  {suggestions.map((s, i) => (
-                    <li key={i} style={{ padding: 5, cursor: 'pointer' }} onClick={() => onChange('chemical_name', s)}>
-                      {s}
-                    </li>
-                  ))}
+                  {suggestions.map((s, i) => <li key={i} style={{ padding: 5, cursor: 'pointer' }} onClick={() => onChange('chemical_name', s)}>{s}</li>)}
                 </ul>
               )}
-              {form.chemical_name && (
-                <button type="button" onClick={lookupSDS} style={{ marginLeft: 10 }}>Lookup SDS</button>
-              )}
+              {form.chemical_name && <button type="button" onClick={lookupSDS} style={{ marginLeft: 10 }}>Lookup SDS</button>}
             </div>
+
             <div style={{ marginBottom: 10 }}><label>UN Numbers: <input style={{ width: '100%' }} value={form.un_numbers} onChange={e => onChange('un_numbers', e.target.value)} /></label></div>
             <div style={{ marginBottom: 10 }}><label>Residues: <input style={{ width: '100%' }} value={form.residues} onChange={e => onChange('residues', e.target.value)} /></label></div>
             <div style={{ marginBottom: 10 }}><label>Residue Class: <input style={{ width: '100%' }} value={form.residues_class} onChange={e => onChange('residues_class', e.target.value)} /></label></div>
@@ -233,21 +229,24 @@ function App() {
             <div style={{ marginBottom: 10 }}><label>Volume m³: <input style={{ width: '100%' }} type="number" value={form.total_volume_m3} onChange={e => onChange('total_volume_m3', e.target.value)} /></label></div>
             <div style={{ marginBottom: 10 }}><label>Class: <input style={{ width: '100%' }} value={form.hazard_class} onChange={e => onChange('hazard_class', e.target.value)} /></label></div>
             <div style={{ marginBottom: 10 }}>
-              <label>Packaging: <select style={{ width: '100%' }} value={form.packaging_type} onChange={e => onChange('packaging_type', e.target.value)}><option>IBC</option><option>Bags</option><option>Drums</option><option>Cylinders</option></select></label>
+              <label>Packaging: <select style={{ width: '100%' }} value={form.packaging_type} onChange={e => onChange('packaging_type', e.target.value)}>
+                <option>IBC</option><option>Bags</option><option>Drums</option><option>Cylinders</option>
+              </select></label>
             </div>
-            <div style={{ marginBottom: 10 }}><label><input type="checkbox" checked={form.cleaned_cert} onChange={e => onChange('cleaned_cert', e.target.checked)} /> Cleaned Cert</label></div>
-            <div style={{ marginBottom: 10 }}><label><input type="checkbox" checked={form.driver_dg_licensed} onChange={e => onChange('driver_dg_licensed', e.target.checked)} /> DG Licensed</label></div>
-            <div style={{ marginBottom: 10 }}><label><input type="checkbox" checked={form.has_nhvr_permit} onChange={e => onChange('has_nhvr_permit', e.target.checked)} /> NHVR Permit</label></div>
+            {/* Checkboxes */}
+            {['cleaned_cert','driver_dg_licensed','has_nhvr_permit','blast_risk_assessed','valve_inspected','shielding_cert','biohazard_containment','corrosion_resistant','lithium_marked'].map(k => (
+              <div style={{ marginBottom: 10 }} key={k}>
+                <label>
+                  <input type="checkbox" checked={form[k]} onChange={e => onChange(k, e.target.checked)} /> {k.replace(/_/g,' ')}
+                </label>
+              </div>
+            ))}
             <div style={{ marginBottom: 10 }}>
-              <label>Pallet: <select style={{ width: '100%' }} value={form.pallet_type} onChange={e => onChange('pallet_type', e.target.value)}><option>standard</option><option>non_sparking</option><option>heavy_duty</option></select></label>
+              <label>Pallet: <select style={{ width: '100%' }} value={form.pallet_type} onChange={e => onChange('pallet_type', e.target.value)}>
+                <option>standard</option><option>non_sparking</option><option>heavy_duty</option>
+              </select></label>
             </div>
-            <div style={{ marginBottom: 10 }}><label><input type="checkbox" checked={form.blast_risk_assessed} onChange={e => onChange('blast_risk_assessed', e.target.checked)} /> Blast Risk (Class 1)</label></div>
-            <div style={{ marginBottom: 10 }}><label><input type="checkbox" checked={form.valve_inspected} onChange={e => onChange('valve_inspected', e.target.checked)} /> Valve Inspected (Class 2)</label></div>
-            <div style={{ marginBottom: 10 }}><label><input type="checkbox" checked={form.shielding_cert} onChange={e => onChange('shielding_cert', e.target.checked)} /> Shielding Cert (Class 7)</label></div>
-            <div style={{ marginBottom: 10 }}><label><input type="checkbox" checked={form.biohazard_containment} onChange={e => onChange('biohazard_containment', e.target.checked)} /> Biohazard Containment (Class 6.2)</label></div>
-            <div style={{ marginBottom: 10 }}><label><input type="checkbox" checked={form.corrosion_resistant} onChange={e => onChange('corrosion_resistant', e.target.checked)} /> Corrosion Resistant (Class 8)</label></div>
-            <div style={{ marginBottom: 10 }}><label><input type="checkbox" checked={form.lithium_marked} onChange={e => onChange('lithium_marked', e.target.checked)} /> Lithium Marked (Class 9)</label></div>
-            <div style={{ marginBottom: 10 }}><label>SDS/Photos: <input type="file" accept="image/*,application/pdf" onChange={handleFile} /></label></div>
+            <div style={{ marginBottom: 10 }}><label>SDS/Photos: <input type="file" accept="image/*,application/pdf,.csv" onChange={handleFile} /></label></div>
           </>
         ) : (
           <div style={{ marginBottom: 10 }}>
@@ -262,30 +261,29 @@ function App() {
         <div style={{ marginBottom: 10 }}>
           <h3>Hazard Pictograms</h3>
           {pictograms.map((p, i) => (
-            <span key={i} title={p.includes('oxidizer') ? 'Oxidizer: May cause or intensify fire' : p.includes('flammable') ? 'Flammable: Ignites easily' : 'Hazard'}>
-              <img src={`/pictograms/${p}`} alt="Hazard" style={{ width: 50, marginRight: 10 }} />
+            <span key={i} title={p.tooltip}>
+              <img src={`/pictograms/${p.src}`} alt="Hazard" style={{ width: 50, marginRight: 10 }} />
             </span>
           ))}
         </div>
       )}
+
       {result && (
         <div style={{ marginTop: 20 }}>
           <h2>Results</h2>
-          {result.results.alerts.map((alert, i) => (
+          {result.results?.alerts?.map((alert, i) => (
             <div key={i} style={{ background: '#f4f4f4', padding: 10, marginBottom: 5 }}>
               <p><strong>{alert.id}</strong>: {alert.action}</p>
               <p>Citation: {alert.citation}</p>
               {alert.id === 'segregation_matrix' && result.results.segregation_details && (
                 <ul>
-                  {result.results.segregation_details.map((d, j) => (
-                    <li key={j}>Class {d.class}: {d.action}</li>
-                  ))}
+                  {result.results.segregation_details.map((d, j) => <li key={j}>Class {d.class}: {d.action}</li>)}
                 </ul>
               )}
             </div>
           ))}
-          <p>Compliant: {result.results.compliant ? 'Yes' : 'No'}</p>
-          {result.results.alerts.some(a => a.id === 'segregation_matrix') && (
+          <p>Compliant: {result.results?.compliant ? 'Yes' : 'No'}</p>
+          {result.results?.alerts?.some(a => a.id === 'segregation_matrix') && (
             <p style={{ color: result.results.segregation_details?.some(d => d.requirement === 'X') ? 'red' : 'orange', fontWeight: 'bold' }}>
               Warning: Incompatible load detected. {result.results.segregation_details?.some(d => d.requirement === 'X') ? 'Segregate (3m or vehicle)' : 'Separate within vehicle'}
             </p>
