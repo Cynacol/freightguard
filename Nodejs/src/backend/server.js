@@ -13,7 +13,7 @@ const fetch = require('node-fetch');
 const crypto = require('crypto');
 
 // -------- Config ----------
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000; 
 const PG_CONFIG = {
   user: process.env.PG_USER || 'postgres',
   host: process.env.PG_HOST || 'localhost',
@@ -63,9 +63,11 @@ pool.query(`
 // Logger
 async function log(level, msg) {
   const now = dayjs().toISOString();
-  await pool.query('INSERT INTO logs (created_at, level, msg) VALUES ($1, $2, $3)', [now, level, msg]);
+  try { await pool.query('INSERT INTO logs (created_at, level, msg) VALUES ($1, $2, $3)', [now, level, msg]); } 
+  catch (e) { console.error('Log insert failed:', e); }
   console[level === 'error' ? 'error' : 'log'](`${now} [${level}] ${msg}`);
 }
+
 
 // Modular Rules
 const modules = {
@@ -150,21 +152,18 @@ function evalCondition(cond, payload) {
     'length': (arr) => Array.isArray(arr) ? arr.length : 0
   };
   if (!cond) return false;
-  if (cond.op === 'and' || cond.op === 'or') {
-    const evaluated = cond.args.map(a => evalCondition(a, payload));
-    return ops[cond.op](evaluated);
-  }
-  let leftVal = cond.left;
-  if (typeof cond.left === 'string' && payload.hasOwnProperty(cond.left)) {
-    leftVal = payload[cond.left];
-  } else if (cond.left.includes('.length')) {
-    const arr = payload[cond.left.split('.')[0]] || [];
-    leftVal = ops['length'](arr);
-  } else if (cond.left === 'placard_threshold' || cond.left === 'dg_license_threshold' || cond.left === 'lq_adjusted_threshold' || cond.left === 'border_permit') {
+  if (cond.op === 'and' || cond.op === 'or') return ops[cond.op](cond.args.map(a => evalCondition(a, payload)));
+  
+  let leftVal;
+  if (cond.left.endsWith('.length')) {
+    const arrName = cond.left.replace('.length', '');
+    leftVal = ops.length(payload[arrName] || []);
+  } else if (payload.hasOwnProperty(cond.left)) leftVal = payload[cond.left];
+  else {
     const state = payload.state_override || payload.state || 'SA';
     const config = stateConfig[state] || stateConfig.SA;
     if (cond.left === 'lq_adjusted_threshold') leftVal = config.placard_threshold * config.lq_mixed_adjust;
-    else leftVal = config[cond.left];
+    else leftVal = config[cond.left] ?? cond.left;
   }
   return ops[cond.op](leftVal, cond.right);
 }
@@ -500,7 +499,4 @@ app.get('/api/export-audit', paymentLockout, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  log('info', `FreightGuard on ${PORT}`);
-  console.log(`http://localhost:${PORT}`);
-});
+app.listen(PORT, () => log('info', `FreightGuard running on ${PORT}`));

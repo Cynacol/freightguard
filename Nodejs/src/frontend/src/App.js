@@ -35,7 +35,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [pictograms, setPictograms] = useState([]);
-  const API = process.env.REACT_APP_API || 'http://localhost:3000/api';
+  const API = process.env.REACT_APP_API || 'https://freightguardbackend.onrender.com/api';
 
   const onChange = (k, v) => setForm({ ...form, [k]: v });
 
